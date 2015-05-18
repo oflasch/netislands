@@ -66,6 +66,8 @@
 typedef struct {
   int local_port; 
   int remote_port; 
+  thrd_t thread;
+  int exit_flag;
   // TODO
 } Island;
 
@@ -108,9 +110,7 @@ int island_destroy(Island *island) {
 }
 */
 
-static int server_thread_exit_flag = 0;
-
-int server_thread(void *args) {
+int island_thread(void *args) {
   Island *island = (Island*) args;
 
   int listenfd, connfd;
@@ -139,7 +139,7 @@ int server_thread(void *args) {
   printf("Server socket connected at port %d. Listening for a TCP connection...\n",
       island->local_port);
 
-  while (!server_thread_exit_flag) {
+  while (!island->exit_flag) {
     clilen = sizeof(cliaddr);
     // TODO DEBUG use select with a short timeout instead of accept!
     if ((connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &clilen)) == -1) {
@@ -173,27 +173,29 @@ int server_thread(void *args) {
 }
 
 int main(int argc, char* argv[]) {
+  netisland_init();
+
   if (3 != argc) {
     printf("usage: test_island local_port remote_port\n");
     return 1;
   }
-  Island island = {
-    .local_port = atoi(argv[1]), 
-    .remote_port = atoi(argv[2])
-  };
+  Island island;
+  island.local_port = atoi(argv[1]); 
+  island.remote_port = atoi(argv[2]);
+  island.exit_flag = 0;
 
   printf("Island local_port: %d remote_port: %d\n", island.local_port, island.remote_port);
-  thrd_t t;
-  if (thrd_create(&t, &server_thread, &island) != thrd_success) {
+  if (thrd_create(&island.thread, &island_thread, &island) != thrd_success) {
     perror("thrd_create");
     return EXIT_FAILURE;
   }
   //thrd_join(t, NULL); // wait for the server thread to exit 
   sleep(30); // run for some time...
-  server_thread_exit_flag = 1; // ...then signal the server thread to exit
-  thrd_join(t, NULL); // wait for the server thread to exit 
+  island.exit_flag = 1; // ...then signal the server thread to exit
+  thrd_join(island.thread, NULL); // wait for the server thread to exit 
 
   printf("Server thread exited, exiting.\n\n");
+  netisland_shutdown();
   return EXIT_SUCCESS;
 }
 
