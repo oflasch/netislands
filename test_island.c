@@ -61,10 +61,11 @@
 
 #define BUFLEN 4096 
 #define BACKLOG 1024 
-
+#define MAX_HOSTNAME_LENGTH 1024
 
 typedef struct {
   int local_port; 
+  char remote_hostname[MAX_HOSTNAME_LENGTH];
   int remote_port; 
   thrd_t thread;
   int exit_flag;
@@ -72,7 +73,9 @@ typedef struct {
 } Island;
 
 
-void netisland_init() {
+static int n_islands = 0;
+
+static void netisland_init() {
 #ifdef _WIN32
   WSADATA ws_data;
   int err = WSAStartup(MAKEWORD(2, 2), &ws_data);
@@ -83,7 +86,7 @@ void netisland_init() {
 #endif
 }
 
-void netisland_shutdown() {
+static void netisland_shutdown() {
 #ifdef _WIN32
   WSACleanup();
 #endif
@@ -94,6 +97,11 @@ void netisland_shutdown() {
 int island_initialize(Island *island, const char *address,
                       const unsigned n_neighbors, const char *neighbor_addresses[n_neighbors],
                       const unsigned msg_queue_length) {
+  if (0 == n_islands) {
+    netisland_init();
+  }
+  // TODO
+  n_islands++;
   return EXIT_FAILURE; // TODO
 }
 
@@ -106,15 +114,41 @@ char *island_dequeue_message(const Island *island) {
 }
 
 int island_destroy(Island *island) {
+  // TODO
+  n_islands--;
+  if (0 == n_islands) {
+    netisland_shutdown();
+  }
   return EXIT_FAILURE; // TODO
 }
 */
 
+static int receive_until_close(int connfd, char *message_buf, const long message_buf_size, long *message_length) {
+  struct sockaddr_in cliaddr;
+  socklen_t clilen = sizeof(cliaddr);
+  long message_buf_remaining = message_buf_size; 
+  char *message_buf_pos = message_buf;
+  for (;;) {
+    ssize_t bytes_received = recvfrom(connfd, message_buf_pos, message_buf_remaining, 0, (struct sockaddr *)&cliaddr, &clilen);
+    if (bytes_received < 0) {
+      perror("recvfrom");
+      return EXIT_FAILURE;
+    } else if (bytes_received == 0) {
+      close(connfd);
+      return EXIT_SUCCESS;
+    } else {
+      message_buf_pos += bytes_received;
+      message_buf_remaining -= bytes_received;
+      *message_length += bytes_received;
+    }
+  }
+  return EXIT_FAILURE; // we should never end up here
+}
+
 int island_thread(void *args) {
   Island *island = (Island*) args;
-
   int listenfd, connfd;
-  struct sockaddr_in servaddr, cliaddr;
+  fd_set fd_read_set;
   socklen_t clilen;
   char mesg[BUFLEN];
 
@@ -122,49 +156,47 @@ int island_thread(void *args) {
     perror("socket");
     return EXIT_FAILURE;
   }
-
+  struct sockaddr_in servaddr;
   memset((char *) &servaddr, 0, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
   servaddr.sin_port = htons(island->local_port);
+  struct timeval select_timeout = {0, 500000}; // 0.5sec
   if (bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1) {
     perror("bind");
     return EXIT_FAILURE;
   }
-
   if (listen(listenfd, BACKLOG) == -1) {
     perror("listen");
     return EXIT_FAILURE;
   }
-  printf("Server socket connected at port %d. Listening for a TCP connection...\n",
+  printf("Server socket bound to port %d. Listening for a TCP connection...\n",
       island->local_port);
 
   while (!island->exit_flag) {
-    clilen = sizeof(cliaddr);
-    // TODO DEBUG use select with a short timeout instead of accept!
-    if ((connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &clilen)) == -1) {
-      perror("accept");
+    FD_ZERO(&fd_read_set);
+    FD_SET(listenfd, &fd_read_set);
+    int select_ret = select(listenfd + 1, &fd_read_set, 0, 0, &select_timeout);
+    if (select_ret == -1) {
+      perror("select");
       return EXIT_FAILURE;
     }
-    printf("Server accepted a connection.\n");
-
-    int n = 0;
-    do {
-      if ((n = recvfrom(connfd, mesg, BUFLEN, 0, (struct sockaddr *)&cliaddr, &clilen)) == -1) {
-        perror("recvfrom");
+    if (select_ret > 0) {
+      struct sockaddr_in cliaddr;
+      clilen = sizeof(cliaddr);
+      if ((connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &clilen)) == -1) {
+        perror("accept");
         return EXIT_FAILURE;
       }
-      char ok_mesg[] = "OK\n";
-      if (sendto(connfd, ok_mesg, sizeof(ok_mesg), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1) {
-        perror("sendto");
-        return EXIT_FAILURE;
-      }
-      mesg[n] = 0;
-      printf("Server received %d chars:\n", n);
-      printf("%s",mesg);
-    } while (n != 0);
-    printf("Client closed the connection.\n");
-    close(connfd);
+      printf("+ Server accepted a connection.\n");
+      long mesg_len = 0;
+      receive_until_close(connfd, mesg, BUFLEN, &mesg_len);
+        printf("Server received %ld chars:\n", mesg_len);
+        printf("-------------------------------------------------------------------------------\n");
+        printf("%s",mesg);
+        printf("-------------------------------------------------------------------------------\n");
+      printf("- Client closed the connection.\n");
+    }
   }
   printf("Received server thread exit flag, exiting.\n");
   close(listenfd);
@@ -172,26 +204,97 @@ int island_thread(void *args) {
   return EXIT_SUCCESS;
 }
 
+static int connect_send_close(const int port, const char *message, const long message_length) {
+  struct sockaddr_in servaddr;
+  memset((char *) &servaddr, 0, sizeof(servaddr));
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+  servaddr.sin_port = htons(port);
+
+  int sockfd, connfd;
+
+  if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+    perror("socket");
+    return EXIT_FAILURE;
+  }
+
+  if ((connfd = connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) == -1) { // TODO use select for timeouts
+    return EXIT_FAILURE;
+  }
+
+  long remaining = message_length;
+  char *message_pos = (char *) message;
+  while (remaining > 0) {
+    ssize_t bytes_send = send(sockfd, message_pos, remaining, 0);
+    if (bytes_send < 0) {
+      perror("send");
+      return EXIT_FAILURE;
+    } else if (bytes_send == 0) {
+      break; // socket closed by server
+    } else {
+      message_pos += bytes_send;
+      remaining -= bytes_send;
+    }
+  }
+
+  close(connfd);
+  close(sockfd);
+  return EXIT_SUCCESS;
+}
+
+int parse_hostname_port_string(char *s, char hostname[MAX_HOSTNAME_LENGTH], int *port) {
+  char *hostname_string = strtok(s, ":");
+  if (hostname_string == 0) {
+    printf("parse_hostname_port_string: invalid hostname:port syntax.\n");
+    return EXIT_FAILURE;
+  }
+  strcpy(hostname, hostname_string);
+  char *port_string = strtok(0, ":");
+  if (port_string == 0) {
+    printf("parse_hostname_port_string: invalid hostname:port syntax.\n");
+    return EXIT_FAILURE;
+  }
+  int port_int = atoi(port_string); 
+  if (port_int == 0) {
+    printf("parse_hostname_port_string: invalid hostname:port syntax.\n");
+    return EXIT_FAILURE;
+  }
+  *port = port_int; 
+  return EXIT_SUCCESS;
+}
+
 int main(int argc, char* argv[]) {
   netisland_init();
 
-  if (3 != argc) {
-    printf("usage: test_island local_port remote_port\n");
+  if (4 != argc) {
+    printf("usage: test_island local_port remote_hostname:remote_port time_to_live\n");
     return 1;
   }
   Island island;
   island.local_port = atoi(argv[1]); 
-  island.remote_port = atoi(argv[2]);
+  if (parse_hostname_port_string(argv[2], island.remote_hostname, &island.remote_port) == EXIT_FAILURE) {
+    return(EXIT_FAILURE);
+  }
   island.exit_flag = 0;
 
-  printf("Island local_port: %d remote_port: %d\n", island.local_port, island.remote_port);
+  printf("Island local_port: %d remote_hostname: %s remote_port: %d\n",
+      island.local_port, island.remote_hostname, island.remote_port);
+
   if (thrd_create(&island.thread, &island_thread, &island) != thrd_success) {
     perror("thrd_create");
     return EXIT_FAILURE;
   }
-  //thrd_join(t, NULL); // wait for the server thread to exit 
-  sleep(30); // run for some time...
-  island.exit_flag = 1; // ...then signal the server thread to exit
+  // test loop, send some messages to the remote island until time_remaining seconds are up...
+  unsigned time_remaining = atoi(argv[3]);
+  while (time_remaining > 0) {
+    sleep(1);
+    char message[512];
+    sprintf(message, "Message from port %d: %d seconds remaining until this island sinks!\n",
+        island.local_port, time_remaining);
+    connect_send_close(island.remote_port, message, 512); // TODO
+    time_remaining--;
+  }
+  island.exit_flag = 1; // signal the server thread to exit
   thrd_join(island.thread, NULL); // wait for the server thread to exit 
 
   printf("Server thread exited, exiting.\n\n");
