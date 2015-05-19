@@ -50,7 +50,7 @@ EXE =
 endif
 
 # object files...
-OBJS = test_island.o tinycthread.o
+OBJS = test_island.o tinycthread.o queue.o
 
 # targets...
 all: test_island$(EXE)
@@ -68,6 +68,7 @@ test_island$(EXE): $(OBJS)
 	$(CC) $(CFLAGS) $<
 
 # dependencies...
-test_island.o: test_island.c tinycthread.h
+test_island.o: test_island.c tinycthread.h queue.h
 tinycthread.o: tinycthread.c tinycthread.h
+queue.o: queue.c queue.h 
 

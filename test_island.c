@@ -1,4 +1,5 @@
 #include "tinycthread.h"
+#include "queue.h"
 
 #ifdef _WIN32
   #define _WIN32_WINNT 0x501
@@ -65,8 +66,11 @@
 
 typedef struct {
   int port; 
-  char remote_hostname[MAX_HOSTNAME_LENGTH];
-  int remote_port; 
+  unsigned n_neighbors;
+  char remote_hostname[MAX_HOSTNAME_LENGTH]; // TODO we need an array of remote hostnames
+  int remote_port; // TODO we need an array of remote ports
+  Queue *message_queue;
+  mtx_t *message_queue_mutex; 
   thrd_t thread;
   int exit_flag;
   // TODO
@@ -94,9 +98,9 @@ static void netisland_shutdown() {
 
 
 /*
-int island_initialize(Island *island, const int port,
-                      const unsigned n_neighbors, const char *neighbor_addresses[n_neighbors],
-                      const unsigned msg_queue_length) {
+int island_init(Island *island, const int port,
+                const unsigned n_neighbors, const char *neighbor_addresses[n_neighbors],
+                const unsigned msg_queue_length) {
   if (0 == n_islands) {
     netisland_init();
   }
@@ -188,15 +192,22 @@ int island_thread(void *args) {
         perror("accept");
         return EXIT_FAILURE;
       }
-      printf("+ Server accepted a connection.\n");
+      //printf("+ Server accepted a connection.\n");
       long mesg_len = 0;
       receive_until_close(connfd, mesg, BUFLEN, &mesg_len);
-      // TODO add the message to a queue
-      printf("Server received %ld chars:\n", mesg_len);
-      printf("-------------------------------------------------------------------------------\n");
-      printf("%s",mesg);
-      printf("-------------------------------------------------------------------------------\n");
-      printf("- Client closed the connection.\n");
+
+      // allocate memory and store the received message in the islands message_queue...
+      char *new_message = (char *) malloc(mesg_len);
+      strcpy(new_message, mesg);
+      mtx_lock(island->message_queue_mutex);
+      queue_enqueue(island->message_queue, new_message);
+      mtx_unlock(island->message_queue_mutex);
+
+      //printf("Server received %ld chars:\n", mesg_len);
+      //printf("-------------------------------------------------------------------------------\n");
+      //printf("%s", new_message);
+      //printf("-------------------------------------------------------------------------------\n");
+      //printf("- Client closed the connection.\n");
     }
   }
   printf("Received server thread exit flag, exiting.\n");
@@ -264,6 +275,7 @@ int parse_hostname_port_string(char *s, char hostname[MAX_HOSTNAME_LENGTH], int 
   return EXIT_SUCCESS;
 }
 
+
 int main(int argc, char* argv[]) {
   netisland_init();
 
@@ -273,9 +285,16 @@ int main(int argc, char* argv[]) {
   }
   Island island;
   island.port = atoi(argv[1]); 
+  island.n_neighbors = 1; // TODO
   if (parse_hostname_port_string(argv[2], island.remote_hostname, &island.remote_port) == EXIT_FAILURE) {
     return(EXIT_FAILURE);
   }
+  Queue message_queue;
+  queue_init(&message_queue);
+  island.message_queue = &message_queue;
+  mtx_t message_queue_mutex;
+  mtx_init(&message_queue_mutex, mtx_plain);
+  island.message_queue_mutex = &message_queue_mutex;
   island.exit_flag = 0;
 
   printf("Island port: %d remote_hostname: %s remote_port: %d\n",
@@ -289,16 +308,32 @@ int main(int argc, char* argv[]) {
   unsigned time_remaining = atoi(argv[3]);
   while (time_remaining > 0) {
     sleep(1);
-    char message[512];
-    sprintf(message, "Message from port %d: %d seconds remaining until this island sinks!\n",
+    char send_message[1024];
+    sprintf(send_message, "Message from port %d: %d seconds remaining until our island sinks!\n",
         island.port, time_remaining);
-    connect_send_close(island.remote_port, message, 512); // TODO
+    connect_send_close(island.remote_port, send_message, 1024); // TODO
     time_remaining--;
+      
+    // dequeue and print all messages from our queue...
+    mtx_lock(island.message_queue_mutex);
+    if (queue_length(island.message_queue)) {
+      printf("=MESSAGE=QUEUE=================================================================\n");
+    }
+    while (queue_length(island.message_queue)) {
+      char *recv_message;
+      queue_dequeue(island.message_queue, (void **) &recv_message);
+      printf("%s", recv_message);
+      printf("-------------------------------------------------------------------------------\n");
+      free(recv_message);
+    }
+    mtx_unlock(island.message_queue_mutex);
   }
   island.exit_flag = 1; // signal the server thread to exit
   thrd_join(island.thread, NULL); // wait for the server thread to exit 
 
   printf("Server thread exited, exiting.\n\n");
+  // TODO cleanup island and free all elements of its message_queue
+  mtx_destroy(island.message_queue_mutex);
   netisland_shutdown();
   return EXIT_SUCCESS;
 }
