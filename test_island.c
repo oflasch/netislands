@@ -64,7 +64,7 @@
 #define MAX_HOSTNAME_LENGTH 1024
 
 typedef struct {
-  int local_port; 
+  int port; 
   char remote_hostname[MAX_HOSTNAME_LENGTH];
   int remote_port; 
   thrd_t thread;
@@ -94,7 +94,7 @@ static void netisland_shutdown() {
 
 
 /*
-int island_initialize(Island *island, const char *address,
+int island_initialize(Island *island, const int port,
                       const unsigned n_neighbors, const char *neighbor_addresses[n_neighbors],
                       const unsigned msg_queue_length) {
   if (0 == n_islands) {
@@ -160,7 +160,7 @@ int island_thread(void *args) {
   memset((char *) &servaddr, 0, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
   servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  servaddr.sin_port = htons(island->local_port);
+  servaddr.sin_port = htons(island->port);
   struct timeval select_timeout = {0, 500000}; // 0.5sec
   if (bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1) {
     perror("bind");
@@ -171,7 +171,7 @@ int island_thread(void *args) {
     return EXIT_FAILURE;
   }
   printf("Server socket bound to port %d. Listening for a TCP connection...\n",
-      island->local_port);
+      island->port);
 
   while (!island->exit_flag) {
     FD_ZERO(&fd_read_set);
@@ -268,18 +268,18 @@ int main(int argc, char* argv[]) {
   netisland_init();
 
   if (4 != argc) {
-    printf("usage: test_island local_port remote_hostname:remote_port time_to_live\n");
+    printf("usage: test_island port remote_hostname:remote_port time_to_live\n");
     return 1;
   }
   Island island;
-  island.local_port = atoi(argv[1]); 
+  island.port = atoi(argv[1]); 
   if (parse_hostname_port_string(argv[2], island.remote_hostname, &island.remote_port) == EXIT_FAILURE) {
     return(EXIT_FAILURE);
   }
   island.exit_flag = 0;
 
-  printf("Island local_port: %d remote_hostname: %s remote_port: %d\n",
-      island.local_port, island.remote_hostname, island.remote_port);
+  printf("Island port: %d remote_hostname: %s remote_port: %d\n",
+      island.port, island.remote_hostname, island.remote_port);
 
   if (thrd_create(&island.thread, &island_thread, &island) != thrd_success) {
     perror("thrd_create");
@@ -291,7 +291,7 @@ int main(int argc, char* argv[]) {
     sleep(1);
     char message[512];
     sprintf(message, "Message from port %d: %d seconds remaining until this island sinks!\n",
-        island.local_port, time_remaining);
+        island.port, time_remaining);
     connect_send_close(island.remote_port, message, 512); // TODO
     time_remaining--;
   }
