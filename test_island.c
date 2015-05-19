@@ -191,10 +191,11 @@ int island_thread(void *args) {
       printf("+ Server accepted a connection.\n");
       long mesg_len = 0;
       receive_until_close(connfd, mesg, BUFLEN, &mesg_len);
-        printf("Server received %ld chars:\n", mesg_len);
-        printf("-------------------------------------------------------------------------------\n");
-        printf("%s",mesg);
-        printf("-------------------------------------------------------------------------------\n");
+      // TODO add the message to a queue
+      printf("Server received %ld chars:\n", mesg_len);
+      printf("-------------------------------------------------------------------------------\n");
+      printf("%s",mesg);
+      printf("-------------------------------------------------------------------------------\n");
       printf("- Client closed the connection.\n");
     }
   }
