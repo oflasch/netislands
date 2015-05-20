@@ -49,8 +49,22 @@ int queue_dequeue(Queue *queue, void **data) {
   queue->length--; 
   return EXIT_SUCCESS;
 }
+
+void queue_for_each(const Queue *queue, const QueueIterator f, void *f_args) {
+  for (QueueNode *iterator = queue->front; iterator != NULL; iterator = iterator->next) {
+    f(iterator->data, f_args);
+  }
+}
  
-/*
+
+// test code...
+#ifdef QUEUE_TEST
+#include <stdio.h>
+
+void test_print_element(void *element, void *args) {
+  printf("%s\n", (char *) element); 
+}
+
 int main() {
   printf("Welcome to the Queue test program!\n");
   Queue q;
@@ -60,6 +74,8 @@ int main() {
   queue_enqueue(&q, "Second Element");
   queue_enqueue(&q, "Third Element");
   printf("Added 3 strings. Current length: %ld\n", queue_length(&q));
+  printf("Printing q via queue_for_each:\n");
+  queue_for_each(&q, &test_print_element, NULL);
   char *element;
   printf("Dequeuing q until it is empty...\n");
   while (queue_length(&q) > 0) {
@@ -70,5 +86,5 @@ int main() {
   printf("All done, exiting.\n");
  
 }
-*/
+#endif
 
