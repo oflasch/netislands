@@ -68,7 +68,7 @@
 #define BACKLOG 1024 
 #define MAX_HOSTNAME_LENGTH 1024
 
-typedef struct { // TODO should go into Island.h
+typedef struct { // TODO should go into Netislands.h
   int port; 
   unsigned n_neighbors;
   Queue *neighbor_queue;
@@ -78,11 +78,12 @@ typedef struct { // TODO should go into Island.h
   thrd_t thread;
   int exit_flag;
   // TODO
-} Island;
+} Netislands_Island;
 
 typedef struct {
   char hostname[MAX_HOSTNAME_LENGTH];
   int port;
+  unsigned n_failures;
 } Neighbor;
 
 
@@ -146,8 +147,23 @@ int check_netislands_message(const char *message, const long message_length) {
   return EXIT_SUCCESS;
 }
 
+int neighbor_equal_predicate(const void *a, const void *b) {
+  if (a == b) {
+    return 1;
+  } else {
+    const Neighbor *neighbor_a = (Neighbor *) a;
+    const Neighbor *neighbor_b = (Neighbor *) b;
+    if (strcmp(neighbor_a->hostname, neighbor_b->hostname) == 0
+        && neighbor_a->port == neighbor_b->port) { // ignore n_failures during comparison
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+}
+
 int island_thread(void *args) {
-  Island *island = (Island*) args;
+  Netislands_Island *island = (Netislands_Island*) args;
   int listenfd, connfd;
   fd_set fd_read_set;
   socklen_t client_address_length;
@@ -209,27 +225,27 @@ int island_thread(void *args) {
         queue_enqueue(island->message_queue, new_message);
         mtx_unlock(island->message_queue_mutex);
       } else if (strcmp(NETISLANDS_JOIN_TAG, tag) == 0) { // join message
-        // get hostname and port of the new neighbor...
+        // create and initialize new neighbor...
         Neighbor *new_neighbor = (Neighbor *) malloc(sizeof(Neighbor));
         inet_ntop(AF_INET, &(client_address.sin_addr), new_neighbor->hostname, MAX_HOSTNAME_LENGTH);
-        //new_neighbor->port = ntohs(client_address.sin_port);
         char port_string[8];
         strncpy(port_string, mesg + NETISLANDS_PROTOCOL_HEADER_LENGTH, 8);
         new_neighbor->port = atoi(port_string);  
+        new_neighbor->n_failures = 0;
         // check if the new neighbor is already in the neighbor queue...
-        int known_neighbor_flag = 0; 
-        mtx_lock(island->message_queue_mutex);
-        // TODO iterate and check...
-        mtx_unlock(island->message_queue_mutex);
-        if (!known_neighbor_flag) { // unknown new neighbar, add it to the queue...
+        mtx_lock(island->neighbor_queue_mutex);
+        long new_neighbor_index = queue_first_index_of(island->neighbor_queue, new_neighbor, &neighbor_equal_predicate); 
+        if (new_neighbor_index == -1) { // unknown new neighbor, add it to the queue...
           printf("New neighbor %s:%d joined.\n", new_neighbor->hostname, new_neighbor->port); // TODO DEBUG
-          mtx_lock(island->message_queue_mutex);
           queue_enqueue(island->neighbor_queue, new_neighbor);
-          mtx_unlock(island->message_queue_mutex);
-        } else { // known new neighbor, ignore...
-          printf("Neighbor %s:%d rejoined.\n", new_neighbor->hostname, new_neighbor->port); // TODO DEBUG
+        } else { // known new neighbor, reset its failure count...
           free(new_neighbor);
+          Neighbor *known_neighbor;
+          queue_get_index(island->neighbor_queue, new_neighbor_index, (void **) &known_neighbor);
+          known_neighbor->n_failures = 0;
+          printf("Neighbor %s:%d rejoined.\n", known_neighbor->hostname, known_neighbor->port); // TODO DEBUG
         }
+        mtx_unlock(island->neighbor_queue_mutex);
       } else { // unknown message tag
         fprintf(stderr, "Received netislands message with unknown tag '%s', ignoring. (%s line# %d)\n", tag, __FILE__, __LINE__);
         continue;
@@ -300,28 +316,38 @@ static int connect_send_close(const char *hostname, const int port, const char *
 }
 
 static void send_join_to_neighbor(void *element, void *args) {
-  const Neighbor *neighbor = (Neighbor *) element;
+  Neighbor *neighbor = (Neighbor *) element;
   const char *message = (char *) args;
   const long message_length = strlen(message);
-  connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_JOIN_TAG, message, message_length);
+  const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_JOIN_TAG, message, message_length);
+  if (ret == EXIT_FAILURE) {
+    neighbor->n_failures++;
+    fprintf(stderr, "Failed to send to neighbor %s:%d. (failure count = %u)\n",
+            neighbor->hostname, neighbor->port, neighbor->n_failures);
+  }
 }
 
-static void island_send_join(const Island *island, const char *message) {
+static void island_send_join(const Netislands_Island *island, const char *message) {
   mtx_lock(island->neighbor_queue_mutex);
   queue_for_each(island->neighbor_queue, &send_join_to_neighbor, (void *) message);
   mtx_unlock(island->neighbor_queue_mutex);
 }
 
 static void send_data_to_neighbor(void *element, void *args) {
-  const Neighbor *neighbor = (Neighbor *) element;
+  Neighbor *neighbor = (Neighbor *) element;
   const char *message = (char *) args;
   const long message_length = strlen(message);
-  connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_DATA_TAG, message, message_length);
+  const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_DATA_TAG, message, message_length);
+  if (ret == EXIT_FAILURE) {
+    neighbor->n_failures++;
+    fprintf(stderr, "Failed to send to neighbor %s:%d. (failure count = %u)\n",
+            neighbor->hostname, neighbor->port, neighbor->n_failures);
+  }
 }
 
 /*
-// TODO public interface to Island...
-int island_init(Island *island, const int port,
+// TODO public interface to Netislands_Island...
+int island_init(Netislands_Island *island, const int port,
                 const unsigned n_neighbors, const char *neighbor_addresses[n_neighbors],
                 const unsigned msg_queue_length) {
   if (0 == n_islands) {
@@ -333,7 +359,7 @@ int island_init(Island *island, const int port,
 }
 */
 
-int island_send(const Island *island, const char *message) {
+int island_send(const Netislands_Island *island, const char *message) {
   mtx_lock(island->neighbor_queue_mutex);
   queue_for_each(island->neighbor_queue, &send_data_to_neighbor, (void *) message);
   mtx_unlock(island->neighbor_queue_mutex);
@@ -341,11 +367,11 @@ int island_send(const Island *island, const char *message) {
 }
 
 /*
-char *island_dequeue_message(const Island *island) {
+char *island_dequeue_message(const Netislands_Island *island) {
   return "NOT IMPLEMENTED\n"; // TODO
 }
 
-int island_destroy(Island *island) {
+int island_destroy(Netislands_Island *island) {
   // TODO
   n_islands--;
   if (0 == n_islands) {
@@ -385,8 +411,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   unsigned time_remaining = atoi(argv[1]);
-  // init Island...
-  Island island;
+  // init Netislands_Island...
+  Netislands_Island island;
   island.port = atoi(argv[2]); 
   // init neighbor queue...
   Queue neighbor_queue;

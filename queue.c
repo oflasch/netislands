@@ -93,6 +93,19 @@ int queue_remove_index(Queue *queue, const long index, void **data) {
   return EXIT_FAILURE; // index not found
 }
 
+int queue_get_index(const Queue *queue, const long index, void **data) {
+  long current_index = 0;
+  for (QueueNode *iterator = queue->front; iterator != NULL; iterator = iterator->next) {
+    if (current_index == index) {
+      *data = iterator->data;
+      return EXIT_SUCCESS;
+    } else {
+      current_index++;
+    }
+  }
+  return EXIT_FAILURE; // index not found
+}
+
 void queue_for_each(const Queue *queue, const QueueMapping f, void *f_args) {
   for (QueueNode *iterator = queue->front; iterator != NULL; iterator = iterator->next) {
     f(iterator->data, f_args);
@@ -139,6 +152,9 @@ int main() {
   printf("Added 3 strings. Current length: %ld\n", queue_length(&q));
   queue_add_front(&q, "Zeroth Element");
   printf("Added 1 string to the front. Current length: %ld\n", queue_length(&q));
+  printf("Getting element at index 2:\n");
+  queue_get_index(&q, 2, (void **) &element);
+  printf("%s\n", element); 
   printf("Printing q via queue_for_each:\n");
   queue_for_each(&q, &test_print_element, NULL);
   printf("First index of 'Zeroth Element' via pointer equality: %ld\n",

@@ -28,6 +28,8 @@ int queue_add_front(Queue *queue, const void *data);
 int queue_dequeue(Queue *queue, void **data); 
 int queue_remove_index(Queue *queue, const long index, void **data); 
 
+int queue_get_index(const Queue *queue, const long index, void **data);
+
 void queue_for_each(const Queue *queue, const QueueMapping f, void *f_args); 
 long queue_first_index_of(const Queue *queue, const void *what, const QueueEqualPredicate equal_predicate); 
 
