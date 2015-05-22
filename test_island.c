@@ -64,9 +64,10 @@
 #define NETISLANDS_PROTOCOL_ID "netislands"
 #define NETISLANDS_PROTOCOL_ID_LENGTH 10
 
-#define BUFLEN 4096 
-#define BACKLOG 1024 
-#define MAX_HOSTNAME_LENGTH 1024
+#define NETISLANDS_MAX_FAILURE_COUNT 8
+#define NETISLANDS_SERVER_BUFFER_LENGTH 4096 
+#define NETISLANDS_BACKLOG 1024 
+#define NETISLANDS_MAX_HOSTNAME_LENGTH 1024
 
 typedef struct { // TODO should go into Netislands.h
   int port; 
@@ -81,7 +82,7 @@ typedef struct { // TODO should go into Netislands.h
 } Netislands_Island;
 
 typedef struct {
-  char hostname[MAX_HOSTNAME_LENGTH];
+  char hostname[NETISLANDS_MAX_HOSTNAME_LENGTH];
   int port;
   unsigned n_failures;
 } Neighbor;
@@ -167,7 +168,7 @@ int island_thread(void *args) {
   int listenfd, connfd;
   fd_set fd_read_set;
   socklen_t client_address_length;
-  char mesg[BUFLEN];
+  char message[NETISLANDS_SERVER_BUFFER_LENGTH];
 
   if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
     perror("socket");
@@ -183,7 +184,7 @@ int island_thread(void *args) {
     perror("bind");
     return EXIT_FAILURE;
   }
-  if (listen(listenfd, BACKLOG) == -1) {
+  if (listen(listenfd, NETISLANDS_BACKLOG) == -1) {
     perror("listen");
     return EXIT_FAILURE;
   }
@@ -206,30 +207,30 @@ int island_thread(void *args) {
         return EXIT_FAILURE;
       }
       //printf("+ Server accepted a connection.\n");
-      long mesg_len = 0;
-      receive_until_close(connfd, mesg, BUFLEN, &mesg_len);
+      long message_length = 0;
+      receive_until_close(connfd, message, NETISLANDS_SERVER_BUFFER_LENGTH, &message_length);
       
-      if (check_netislands_message(mesg, mesg_len) == EXIT_FAILURE) {
+      if (check_netislands_message(message, message_length) == EXIT_FAILURE) {
         fprintf(stderr, "Received malformed netislands message, ignoring. (%s line# %d)\n", __FILE__, __LINE__);
         continue;
       }
       char tag[NETISLANDS_TAG_LENGTH];
-      strncpy(tag, mesg + NETISLANDS_PROTOCOL_ID_LENGTH + NETISLANDS_PROTOCOL_VERSION_LENGTH, NETISLANDS_TAG_LENGTH); 
+      strncpy(tag, message + NETISLANDS_PROTOCOL_ID_LENGTH + NETISLANDS_PROTOCOL_VERSION_LENGTH, NETISLANDS_TAG_LENGTH); 
 
       // handle message based on message tag...
       if (strcmp(NETISLANDS_DATA_TAG, tag) == 0) { // data message
         // allocate memory and store the received data message content in the islands message_queue...
-        char *new_message = (char *) malloc(mesg_len - NETISLANDS_PROTOCOL_HEADER_LENGTH);
-        strncpy(new_message, mesg + NETISLANDS_PROTOCOL_HEADER_LENGTH, mesg_len - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+        char *new_message = (char *) malloc(message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+        strncpy(new_message, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
         mtx_lock(island->message_queue_mutex);
         queue_enqueue(island->message_queue, new_message);
         mtx_unlock(island->message_queue_mutex);
       } else if (strcmp(NETISLANDS_JOIN_TAG, tag) == 0) { // join message
         // create and initialize new neighbor...
         Neighbor *new_neighbor = (Neighbor *) malloc(sizeof(Neighbor));
-        inet_ntop(AF_INET, &(client_address.sin_addr), new_neighbor->hostname, MAX_HOSTNAME_LENGTH);
+        inet_ntop(AF_INET, &(client_address.sin_addr), new_neighbor->hostname, NETISLANDS_MAX_HOSTNAME_LENGTH);
         char port_string[8];
-        strncpy(port_string, mesg + NETISLANDS_PROTOCOL_HEADER_LENGTH, 8);
+        strncpy(port_string, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, 8);
         new_neighbor->port = atoi(port_string);  
         new_neighbor->n_failures = 0;
         // check if the new neighbor is already in the neighbor queue...
@@ -327,9 +328,38 @@ static void send_join_to_neighbor(void *element, void *args) {
   }
 }
 
+static void remove_failed_neighbors(Queue *neighbor_queue) {
+  // this assumes that we have a mutex lock on neighbor_queue!
+  long failed_neighbor_index;
+  for (;;) { 
+    // search for a failed neighbor...
+    failed_neighbor_index = -1;
+    long current_index = 0;
+    for (QueueNode *iterator = neighbor_queue->front; iterator != NULL; iterator = iterator->next) {
+      const Neighbor *current_neighbor = (const Neighbor *) iterator->data; 
+      if (current_neighbor->n_failures >= NETISLANDS_MAX_FAILURE_COUNT) {
+        failed_neighbor_index = current_index;
+        break;
+      } else {
+        current_index++;
+      }
+    }
+    if (failed_neighbor_index != -1) { // failed neighbor found, remove from queue...
+      Neighbor *failed_neighbor;
+      queue_remove_index(neighbor_queue, failed_neighbor_index, (void **) &failed_neighbor); 
+      fprintf(stderr, "Removed failed neighbor %s:%d. (failure count = %u)\n",
+              failed_neighbor->hostname, failed_neighbor->port, failed_neighbor->n_failures);
+      free(failed_neighbor);
+    } else { // no failed_neighbor found, break from loop
+      break;
+    }
+  }
+}
+
 static void island_send_join(const Netislands_Island *island, const char *message) {
   mtx_lock(island->neighbor_queue_mutex);
   queue_for_each(island->neighbor_queue, &send_join_to_neighbor, (void *) message);
+  remove_failed_neighbors(island->neighbor_queue);
   mtx_unlock(island->neighbor_queue_mutex);
 }
 
@@ -362,6 +392,7 @@ int island_init(Netislands_Island *island, const int port,
 int island_send(const Netislands_Island *island, const char *message) {
   mtx_lock(island->neighbor_queue_mutex);
   queue_for_each(island->neighbor_queue, &send_data_to_neighbor, (void *) message);
+  remove_failed_neighbors(island->neighbor_queue);
   mtx_unlock(island->neighbor_queue_mutex);
   return EXIT_SUCCESS;
 }
@@ -381,7 +412,7 @@ int island_destroy(Netislands_Island *island) {
 }
 */
 
-int parse_hostname_port_string(char *s, char hostname[MAX_HOSTNAME_LENGTH], int *port) {
+int parse_hostname_port_string(char *s, char hostname[NETISLANDS_MAX_HOSTNAME_LENGTH], int *port) {
   char *hostname_string = strtok(s, ":");
   if (hostname_string == 0) {
     printf("parse_hostname_port_string: invalid hostname:port syntax.\n");
