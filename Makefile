@@ -1,4 +1,4 @@
-# Makefile for netisland
+# Makefile for netislands
 # 2015 Oliver Flasch
 # All rights reserved.
 #
@@ -50,15 +50,15 @@ EXE =
 endif
 
 # object files...
-OBJS = test_island.o tinycthread.o queue.o
+OBJS = netislands_test.o netislands.o tinycthread.o queue.o
 
 # targets...
-all: test_island$(EXE)
+all: netislands_test$(EXE)
 
 clean:
 	$(RM) $(EXE) test_island$(EXE) $(OBJS)
 
-test_island$(EXE): $(OBJS)
+netislands_test$(EXE): $(OBJS)
 	$(CC) $(LFLAGS) -o $@ $(OBJS) $(LIBS)
 
 %.o: %.cpp
@@ -68,7 +68,8 @@ test_island$(EXE): $(OBJS)
 	$(CC) $(CFLAGS) $<
 
 # dependencies...
-test_island.o: test_island.c tinycthread.h queue.h
+netislands_test.o: netislands_test.c netislands.h tinycthread.h queue.h
+netislands.o: netislands.c netislands.h tinycthread.h queue.h
 tinycthread.o: tinycthread.c tinycthread.h
 queue.o: queue.c queue.h 
 
