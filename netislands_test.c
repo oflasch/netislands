@@ -1,5 +1,5 @@
 /* netislands_test.c
- * Copyright 2015 Oliver Flasch. All rights reserved.
+ * Copyright (c) 2015 Oliver Flasch. All rights reserved.
  */
 
 #include "netislands.h"

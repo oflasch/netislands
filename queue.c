@@ -1,3 +1,7 @@
+/* queue.c 
+ * Copyright (c) 2015 Oliver Flasch. All rights reserved.
+ */
+
 #include "queue.h"
 #include <stdlib.h>
  

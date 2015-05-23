@@ -1,3 +1,7 @@
+/* queue.h 
+ * Copyright (c) 2015 Oliver Flasch. All rights reserved.
+ */
+
 #ifndef QUEUE_H
 #define QUEUE_H
 
