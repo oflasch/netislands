@@ -1,5 +1,5 @@
 # netislands
-copyright (c) 2015 Oliver Flasch
+copyright (c) 2015 Oliver Flasch.
 All rights reserved.
 
 
