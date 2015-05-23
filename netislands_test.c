@@ -13,6 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define NETISLAND_TEST_TIMESTEP_USECS 500000
+
 
 int parse_hostname_port_string(char *s, char *hostname, int *port) {
   char *hostname_string = strtok(s, ":");
@@ -40,7 +42,7 @@ int main(int argc, char* argv[]) {
     printf("usage: %s time_to_live port [neighbor_hostname:port]*\n", argv[0]);
     return 1;
   }
-  unsigned time_remaining = atoi(argv[1]);
+  unsigned long time_remaining = 1e6 * atoi(argv[1]);
   // init Netislands_Island...
   Netislands_Island island;
   const unsigned n_neighbors = argc - 3;
@@ -60,12 +62,12 @@ int main(int argc, char* argv[]) {
   printf("Island initialized at port: %d\n", island.port);
   // test loop, send some messages to the remote island until time_remaining seconds are up...
   while (time_remaining > 0) {
-    sleep(1);
+    usleep(NETISLAND_TEST_TIMESTEP_USECS);
     char data_message[1024];
-    sprintf(data_message, "Message from port %d: %d seconds remaining until our island sinks!\n",
+    sprintf(data_message, "Message from port %d: %lu microseconds remaining until our island sinks!\n",
             island.port, time_remaining);
     island_send(&island, data_message);
-    time_remaining--;
+    time_remaining -= NETISLAND_TEST_TIMESTEP_USECS;
       
     // dequeue and print all messages from our queue...
     mtx_lock(island.message_queue_mutex);
