@@ -103,10 +103,15 @@ static int receive_until_close(int connfd, char *message_buf, const long message
                                       (struct sockaddr *)&client_address, &client_address_length);
     if (bytes_received < 0) {
       perror("recvfrom");
-      //close(connfd); // TODO
+      // TODO maybe close connfd after error?
       return EXIT_FAILURE;
     } else if (bytes_received == 0) {
-      close(connfd);
+      // TODO client closes connection?
+      if (close(connfd) == -1) {
+        perror("receive_until_close: close connfd");
+        //return EXIT_FAILURE;
+        return EXIT_SUCCESS; // ignore error
+      }
       return EXIT_SUCCESS;
     } else {
       message_buf_pos += bytes_received;
@@ -156,6 +161,10 @@ static int island_thread_main(void *args) {
     perror("socket");
     return EXIT_FAILURE;
   }
+  // allow socket address reuse to avoid "address alreay in use" errors...
+  int option_value = 1;
+  setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &option_value, sizeof option_value);
+
   struct sockaddr_in server_address;
   memset((char *) &server_address, 0, sizeof(server_address));
   server_address.sin_family = AF_INET;
@@ -222,14 +231,12 @@ static int island_thread_main(void *args) {
         mtx_lock(island->neighbor_queue_mutex);
         long new_neighbor_index = queue_first_index_of(island->neighbor_queue, new_neighbor, &neighbor_equal_predicate); 
         if (new_neighbor_index == -1) { // unknown new neighbor, add it to the queue...
-          printf("New neighbor %s:%d joined.\n", new_neighbor->hostname, new_neighbor->port); // TODO DEBUG
           queue_enqueue(island->neighbor_queue, new_neighbor);
         } else { // known new neighbor, reset its failure count...
           free(new_neighbor);
           Neighbor *known_neighbor;
           queue_get_index(island->neighbor_queue, new_neighbor_index, (void **) &known_neighbor);
           known_neighbor->failure_count = 0;
-          printf("Neighbor %s:%d rejoined.\n", known_neighbor->hostname, known_neighbor->port); // TODO DEBUG
         }
         mtx_unlock(island->neighbor_queue_mutex);
       } else { // unknown message tag
@@ -239,7 +246,10 @@ static int island_thread_main(void *args) {
     }
   }
   printf("Island server thread clean exit.\n");
-  close(listenfd);
+  if (close(listenfd) == -1) {
+    perror("island_thread_main: close listenfd");
+    return EXIT_FAILURE;
+  }
 
   return EXIT_SUCCESS;
 }
@@ -297,8 +307,20 @@ static int connect_send_close(const char *hostname, const int port, const char *
   }
 
   // close connection...
-  close(connfd);
-  close(sockfd);
+  /*
+  // TODO does connfd need to be closed?
+  if (close(connfd) == -1) {
+    perror("connect_send_close: close connfd");
+    //return EXIT_FAILURE;
+    return EXIT_SUCCESS; // ignore error
+  }
+  */
+  // TODO does sockfd need to be closed?...
+  if (close(sockfd) == -1) {
+    perror("connect_send_close: close sockfd");
+    //return EXIT_FAILURE;
+    return EXIT_SUCCESS; // ignore error
+  }
   return EXIT_SUCCESS;
 }
 
@@ -309,7 +331,7 @@ static void send_join_to_neighbor(void *element, void *args) {
   const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_JOIN_TAG, message, message_length);
   if (ret == EXIT_FAILURE) {
     neighbor->failure_count++;
-    fprintf(stderr, "Failed to send to neighbor %s:%d. (failure count = %u)\n",
+    fprintf(stderr, "send_join_to_neighbor: Failed to send to neighbor %s:%d. (failure count = %u)\n",
             neighbor->hostname, neighbor->port, neighbor->failure_count);
   }
 }
@@ -356,7 +378,7 @@ static void send_data_to_neighbor(void *element, void *args) {
   const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_DATA_TAG, message, message_length);
   if (ret == EXIT_FAILURE) {
     neighbor->failure_count++;
-    fprintf(stderr, "Failed to send to neighbor %s:%d. (failure count = %u)\n",
+    fprintf(stderr, "send_data_to_neighbor: Failed to send to neighbor %s:%d. (failure count = %u)\n",
             neighbor->hostname, neighbor->port, neighbor->failure_count);
   }
 }
