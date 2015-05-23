@@ -56,7 +56,7 @@ OBJS = netislands_test.o netislands.o tinycthread.o queue.o
 all: netislands_test$(EXE)
 
 clean:
-	$(RM) $(EXE) test_island$(EXE) $(OBJS)
+	$(RM) $(EXE) netislands_test$(EXE) $(OBJS)
 
 netislands_test$(EXE): $(OBJS)
 	$(CC) $(LFLAGS) -o $@ $(OBJS) $(LIBS)

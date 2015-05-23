@@ -1,0 +1,17 @@
+# .gitignore
+# Files that Git shouldn't track
+#
+
+# Ignore Max OS X Finder Desktop Services Store files
+.DS_Store
+
+# Ignore Emacs backup files
+*~
+
+# Ignore VI temporaries
+*.swp
+
+# Ignore object files
+*.o
+*.so
+
