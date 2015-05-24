@@ -14,6 +14,7 @@
 #include <string.h>
 
 #define NETISLAND_TEST_TIMESTEP_USECS 500000
+#define NETISLAND_TEST_MAX_FAILURES 16
 
 
 int parse_hostname_port_string(char *s, char *hostname, int *port) {
@@ -56,7 +57,8 @@ int main(int argc, char* argv[]) {
     }
   }
   island_init(&island, atoi(argv[2]),
-              n_neighbors, (const char **) neighbor_hostnames, neighbor_ports);
+              n_neighbors, (const char **) neighbor_hostnames, neighbor_ports,
+              NETISLAND_TEST_MAX_FAILURES);
 
   // test code...
   printf("Island initialized at port: %d\n", island.port);

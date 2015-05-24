@@ -15,7 +15,6 @@
 #define NETISLANDS_PROTOCOL_ID "netislands"
 #define NETISLANDS_PROTOCOL_ID_LENGTH 10
 
-#define NETISLANDS_MAX_FAILURE_COUNT 8
 #define NETISLANDS_SERVER_BUFFER_LENGTH 4096 
 #define NETISLANDS_BACKLOG 1024 
 #define NETISLANDS_MAX_HOSTNAME_LENGTH 1024
@@ -26,6 +25,7 @@ typedef struct {
   int port; 
   Queue *neighbor_queue;
   mtx_t *neighbor_queue_mutex; 
+  unsigned max_failures;
   Queue *message_queue;
   mtx_t *message_queue_mutex; 
   thrd_t thread;
@@ -37,7 +37,8 @@ int island_init(Netislands_Island *island,
                 const int port,
                 const unsigned n_neighbors,
                 const char *neighbor_hostnames[n_neighbors],
-                const int neighbor_ports[n_neighbors]); 
+                const int neighbor_ports[n_neighbors],
+                const unsigned max_failures); 
 
 int island_send(const Netislands_Island *island, const char *message);
 

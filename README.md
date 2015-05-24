@@ -10,10 +10,12 @@ distributed computing tasks with modest bandwidth and latency demands, such as
 evolutionary and genetic algorithms, through a model of connected islands. An
 island is an abstract object supporting the following operations:
 
-1. **Init:** `int island_init(Netislands_Island *island, const int port, const unsigned n_neighbors, const char *neighbor_hostnames[n_neighbors], const int neighbor_ports[n_neighbors])` 
+1. **Init:** `int island_init(Netislands_Island *island, const int port, const unsigned n_neighbors, const char *neighbor_hostnames[n_neighbors], const int neighbor_ports[n_neighbors], const unsigned max_failures)` 
    initializes an island listening on  `port` that has outgoing connections to
    `n_neighbors` with hostnames `neighbor_hostnames` (an array of strings)
-   and ports `neighbor_ports` (an array of ints).
+   and ports `neighbor_ports` (an array of ints). Neighbors are considered as
+   failed and will be removed if `max_failures` send attempt failed. Set this
+   to `0` to disable neighbor removal.
 2. **Send:** `int island_send(const Netislands_Island *island, const char *message)`
    sends the string `message` to all neighbors of an `island`.
 3. **Dequeue Message:** `char *island_dequeue_message(const Netislands_Island *island)` dequeues the

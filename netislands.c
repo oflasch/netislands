@@ -336,7 +336,10 @@ static void send_join_to_neighbor(void *element, void *args) {
   }
 }
 
-static void remove_failed_neighbors(Queue *neighbor_queue) {
+static void remove_failed_neighbors(Queue *neighbor_queue, const unsigned max_failures) {
+  if (max_failures == 0) { // do nothing when neighbor removal is disabled
+    return;
+  }
   // this assumes that we have a mutex lock on neighbor_queue!
   long failed_neighbor_index;
   for (;;) { 
@@ -345,7 +348,7 @@ static void remove_failed_neighbors(Queue *neighbor_queue) {
     long current_index = 0;
     for (QueueNode *iterator = neighbor_queue->front; iterator != NULL; iterator = iterator->next) {
       const Neighbor *current_neighbor = (const Neighbor *) iterator->data; 
-      if (current_neighbor->failure_count >= NETISLANDS_MAX_FAILURE_COUNT) {
+      if (current_neighbor->failure_count >= max_failures) {
         failed_neighbor_index = current_index;
         break;
       } else {
@@ -367,7 +370,7 @@ static void remove_failed_neighbors(Queue *neighbor_queue) {
 static void island_send_join(const Netislands_Island *island, const char *message) {
   mtx_lock(island->neighbor_queue_mutex);
   queue_for_each(island->neighbor_queue, &send_join_to_neighbor, (void *) message);
-  remove_failed_neighbors(island->neighbor_queue);
+  remove_failed_neighbors(island->neighbor_queue, island->max_failures);
   mtx_unlock(island->neighbor_queue_mutex);
 }
 
@@ -387,7 +390,8 @@ int island_init(Netislands_Island *island,
                 const int port,
                 const unsigned n_neighbors,
                 const char *neighbor_hostnames[n_neighbors],
-                const int neighbor_ports[n_neighbors]) {
+                const int neighbor_ports[n_neighbors],
+                const unsigned max_failures) {
   // maybe initialize network...
   if (0 == n_islands) {
     netislands_init();
@@ -421,6 +425,8 @@ int island_init(Netislands_Island *island,
   }
   // init flags...
   island->exit_flag = 0;
+  // init max_failures...
+  island->max_failures = max_failures;
   // init island thread...
   thrd_t island_thread = malloc(sizeof(thrd_t));
   island->thread = island_thread;
@@ -439,7 +445,7 @@ int island_init(Netislands_Island *island,
 int island_send(const Netislands_Island *island, const char *message) {
   mtx_lock(island->neighbor_queue_mutex);
   queue_for_each(island->neighbor_queue, &send_data_to_neighbor, (void *) message);
-  remove_failed_neighbors(island->neighbor_queue);
+  remove_failed_neighbors(island->neighbor_queue, island->max_failures);
   mtx_unlock(island->neighbor_queue_mutex);
   return EXIT_SUCCESS;
 }
