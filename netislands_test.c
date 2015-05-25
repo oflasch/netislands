@@ -2,6 +2,7 @@
  * Copyright (c) 2015 Oliver Flasch. All rights reserved.
  */
 
+#define NETISLANDS_DEBUG
 #include "netislands.h"
 
 #ifdef _WIN32
