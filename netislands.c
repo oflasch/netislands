@@ -218,14 +218,18 @@ static int island_thread_main(void *args) {
       // handle message based on message tag...
       if (strcmp(NETISLANDS_DATA_TAG, tag) == 0) { // data message
         // if the maximum message queue length is not exceeded, allocate memory
-        // and store the received data message content in the islands message_queue...
+        // and store the received data message content in the islands message_queue,
+        // otherwise drop an old message first...
         mtx_lock(island->message_queue_mutex);
         if (island->max_message_queue_length != 0
-            && queue_length(island->message_queue) < island->max_message_queue_length) {
-          char *new_message = (char *) malloc(message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
-          strncpy(new_message, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
-            queue_enqueue(island->message_queue, new_message);
+            && queue_length(island->message_queue) >= island->max_message_queue_length) {
+          char *message_to_drop;
+          queue_dequeue(island->message_queue, (void **) &message_to_drop);
+          free(message_to_drop);
         }
+        char *new_message = (char *) malloc(message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+        strncpy(new_message, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+        queue_enqueue(island->message_queue, new_message);
         mtx_unlock(island->message_queue_mutex);
       } else if (strcmp(NETISLANDS_JOIN_TAG, tag) == 0) { // join message
         // create and initialize new neighbor...
