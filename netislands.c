@@ -217,11 +217,15 @@ static int island_thread_main(void *args) {
 
       // handle message based on message tag...
       if (strcmp(NETISLANDS_DATA_TAG, tag) == 0) { // data message
-        // allocate memory and store the received data message content in the islands message_queue...
-        char *new_message = (char *) malloc(message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
-        strncpy(new_message, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+        // if the maximum message queue length is not exceeded, allocate memory
+        // and store the received data message content in the islands message_queue...
         mtx_lock(island->message_queue_mutex);
-        queue_enqueue(island->message_queue, new_message);
+        if (island->max_message_queue_length != 0
+            && queue_length(island->message_queue) < island->max_message_queue_length) {
+          char *new_message = (char *) malloc(message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+          strncpy(new_message, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+            queue_enqueue(island->message_queue, new_message);
+        }
         mtx_unlock(island->message_queue_mutex);
       } else if (strcmp(NETISLANDS_JOIN_TAG, tag) == 0) { // join message
         // create and initialize new neighbor...
@@ -397,6 +401,7 @@ int island_init(Netislands_Island *island,
                 const unsigned n_neighbors,
                 const char *neighbor_hostnames[n_neighbors],
                 const int neighbor_ports[n_neighbors],
+                const long max_message_queue_length,
                 const unsigned max_failures) {
   // maybe initialize network...
   if (0 == n_islands) {
@@ -429,9 +434,9 @@ int island_init(Netislands_Island *island,
     queue_enqueue(island->neighbor_queue, new_neighbor);
     mtx_unlock(island->neighbor_queue_mutex);
   }
-  // init flags...
+  // init other members...
   island->exit_flag = 0;
-  // init max_failures...
+  island->max_message_queue_length = max_message_queue_length;
   island->max_failures = max_failures;
   // init island thread...
   thrd_t island_thread = malloc(sizeof(thrd_t));

@@ -25,6 +25,7 @@ typedef struct {
   int port; 
   Queue *neighbor_queue;
   mtx_t *neighbor_queue_mutex; 
+  long max_message_queue_length;
   unsigned max_failures;
   Queue *message_queue;
   mtx_t *message_queue_mutex; 
@@ -38,6 +39,7 @@ int island_init(Netislands_Island *island,
                 const unsigned n_neighbors,
                 const char *neighbor_hostnames[n_neighbors],
                 const int neighbor_ports[n_neighbors],
+                const long max_message_queue_length,
                 const unsigned max_failures); 
 
 int island_send(const Netislands_Island *island, const char *message);

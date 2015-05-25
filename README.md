@@ -10,12 +10,16 @@ distributed computing tasks with modest bandwidth and latency demands, such as
 evolutionary and genetic algorithms, through a model of connected islands. An
 island is an abstract object supporting the following operations:
 
-1. **Init:** `int island_init(Netislands_Island *island, const int port, const unsigned n_neighbors, const char *neighbor_hostnames[n_neighbors], const int neighbor_ports[n_neighbors], const unsigned max_failures)` 
+1. **Init:** `int island_init(Netislands_Island *island, const int port, const unsigned n_neighbors, const char *neighbor_hostnames[n_neighbors], const int neighbor_ports[n_neighbors], const long max_message_queue_length, const unsigned max_failures)` 
    initializes an island listening on  `port` that has outgoing connections to
    `n_neighbors` with hostnames `neighbor_hostnames` (an array of strings)
-   and ports `neighbor_ports` (an array of ints). Neighbors are considered as
-   failed and will be removed if `max_failures` send attempt failed. Set this
-   to `0` to disable neighbor removal.
+   and ports `neighbor_ports` (an array of ints). Received neighbor messages
+   are stored in a queue of maximum length `max_message_queue_length`. If this
+   length is exceeded, the oldest message in the queue will be silently dropped
+   when a new message arrives. Set to `max_message_queue_length` to disable this
+   behavior. Neighbors are considered as failed and will be removed if
+   `max_failures` send attempt failed. Set this to `0` to disable neighbor
+   removal.
 2. **Send:** `int island_send(const Netislands_Island *island, const char *message)`
    sends the string `message` to all neighbors of an `island`.
 3. **Dequeue Message:** `char *island_dequeue_message(const Netislands_Island *island)` dequeues the

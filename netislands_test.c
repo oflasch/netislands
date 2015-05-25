@@ -15,6 +15,7 @@
 #include <string.h>
 
 #define NETISLAND_TEST_TIMESTEP_USECS 500000
+#define NETISLAND_MAX_MESSAGE_QUEUE_LENGTH 1
 #define NETISLAND_TEST_MAX_FAILURES 16
 
 
@@ -59,6 +60,7 @@ int main(int argc, char* argv[]) {
   }
   island_init(&island, atoi(argv[2]),
               n_neighbors, (const char **) neighbor_hostnames, neighbor_ports,
+              NETISLAND_MAX_MESSAGE_QUEUE_LENGTH,
               NETISLAND_TEST_MAX_FAILURES);
 
   // test code...
