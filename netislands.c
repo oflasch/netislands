@@ -375,7 +375,7 @@ static int connect_send_close(const char *hostname, const int port, const char *
 static void send_join_to_neighbor(void *element, void *args) {
   Neighbor *neighbor = (Neighbor *) element;
   const char *message = (char *) args;
-  const long message_length = strlen(message);
+  const long message_length = strlen(message) + 1; // include the terminating \0
   const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_JOIN_TAG, message, message_length);
   if (ret == EXIT_FAILURE) {
     neighbor->failure_count++;
@@ -429,7 +429,7 @@ static void island_send_join(const Netislands_Island *island, const char *messag
 static void send_data_to_neighbor(void *element, void *args) {
   Neighbor *neighbor = (Neighbor *) element;
   const char *message = (char *) args;
-  const long message_length = strlen(message);
+  const long message_length = strlen(message) + 1; // include the terminating \0
   const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_DATA_TAG, message, message_length);
   if (ret == EXIT_FAILURE) {
     neighbor->failure_count++;
