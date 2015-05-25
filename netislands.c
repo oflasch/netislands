@@ -102,13 +102,17 @@ static int receive_until_close(int connfd, char *message_buf, const long message
     ssize_t bytes_received = recvfrom(connfd, message_buf_pos, message_buf_remaining, 0,
                                       (struct sockaddr *)&client_address, &client_address_length);
     if (bytes_received < 0) {
+#ifdef NETISLANDS_DEBUG
       perror("recvfrom");
+#endif
       // TODO maybe close connfd after error?
       return EXIT_FAILURE;
     } else if (bytes_received == 0) {
       // TODO client closes connection?
       if (close(connfd) == -1) {
+#ifdef NETISLANDS_DEBUG
         perror("receive_until_close: close connfd");
+#endif
         //return EXIT_FAILURE;
         return EXIT_SUCCESS; // ignore error
       }
@@ -158,7 +162,9 @@ static int island_thread_main(void *args) {
   char message[NETISLANDS_SERVER_BUFFER_LENGTH];
 
   if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+#ifdef NETISLANDS_DEBUG
     perror("socket");
+#endif
     return EXIT_FAILURE;
   }
   // allow socket address reuse to avoid "address alreay in use" errors...
@@ -172,11 +178,15 @@ static int island_thread_main(void *args) {
   server_address.sin_port = htons(island->port);
   struct timeval select_timeout = {0, 500000}; // 0.5sec
   if (bind(listenfd, (struct sockaddr *)&server_address, sizeof(server_address)) == -1) {
+#ifdef NETISLANDS_DEBUG
     perror("bind");
+#endif
     return EXIT_FAILURE;
   }
   if (listen(listenfd, NETISLANDS_BACKLOG) == -1) {
+#ifdef NETISLANDS_DEBUG
     perror("listen");
+#endif
     return EXIT_FAILURE;
   }
 #ifdef NETISLANDS_DEBUG
@@ -189,14 +199,18 @@ static int island_thread_main(void *args) {
     FD_SET(listenfd, &fd_read_set);
     int select_ret = select(listenfd + 1, &fd_read_set, 0, 0, &select_timeout);
     if (select_ret == -1) {
+#ifdef NETISLANDS_DEBUG
       perror("select");
+#endif
       return EXIT_FAILURE;
     }
     if (select_ret > 0) {
       struct sockaddr_in client_address;
       client_address_length = sizeof(client_address);
       if ((connfd = accept(listenfd, (struct sockaddr *)&client_address, &client_address_length)) == -1) {
+#ifdef NETISLANDS_DEBUG
         perror("accept");
+#endif
         return EXIT_FAILURE;
       }
 #ifdef NETISLANDS_DEBUG
@@ -204,12 +218,16 @@ static int island_thread_main(void *args) {
 #endif
       long message_length = 0;
       if (receive_until_close(connfd, message, NETISLANDS_SERVER_BUFFER_LENGTH, &message_length) == EXIT_FAILURE) {
+#ifdef NETISLANDS_DEBUG
         fprintf(stderr, "Network error while receiving netislands message, ignoring message. (%s line# %d)\n", __FILE__, __LINE__);
+#endif
         continue;
       }
       
       if (check_netislands_message(message, message_length) == EXIT_FAILURE) {
+#ifdef NETISLANDS_DEBUG
         fprintf(stderr, "Received malformed netislands message, ignoring. (%s line# %d)\n", __FILE__, __LINE__);
+#endif
         continue;
       }
       char tag[NETISLANDS_TAG_LENGTH];
@@ -252,7 +270,9 @@ static int island_thread_main(void *args) {
         }
         mtx_unlock(island->neighbor_queue_mutex);
       } else { // unknown message tag
+#ifdef NETISLANDS_DEBUG
         fprintf(stderr, "Received netislands message with unknown tag '%s', ignoring. (%s line# %d)\n", tag, __FILE__, __LINE__);
+#endif
         continue;
       }
     }
@@ -261,7 +281,9 @@ static int island_thread_main(void *args) {
   printf("Island server thread clean exit.\n");
 #endif
   if (close(listenfd) == -1) {
+#ifdef NETISLANDS_DEBUG
     perror("island_thread_main: close listenfd");
+#endif
     return EXIT_FAILURE;
   }
 
@@ -274,10 +296,14 @@ static int send_all(const int sockfd, const char *message, const long message_le
   while (remaining > 0) {
     ssize_t bytes_send = send(sockfd, message_pos, remaining, 0);
     if (bytes_send < 0) {
+#ifdef NETISLANDS_DEBUG
       perror("send");
+#endif
       return EXIT_FAILURE;
     } else if (bytes_send == 0) {
+#ifdef NETISLANDS_DEBUG
       fprintf(stderr, "Socket closed by receiving neighbor, ignoring. (%s line# %d)\n", __FILE__, __LINE__);
+#endif
       break; // socket closed by server
     } else {
       message_pos += bytes_send;
@@ -298,11 +324,15 @@ static int connect_send_close(const char *hostname, const int port, const char *
 
   // create client socket and connect to neighbor...
   if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+#ifdef NETISLANDS_DEBUG
     perror("socket");
+#endif
     return EXIT_FAILURE;
   }
   if ((connfd = connect(sockfd, (struct sockaddr *)&server_address, sizeof(server_address))) == -1) { // TODO use select for timeouts
+#ifdef NETISLANDS_DEBUG
     perror("connect");
+#endif
     return EXIT_FAILURE;
   }
 
@@ -324,14 +354,18 @@ static int connect_send_close(const char *hostname, const int port, const char *
   /*
   // TODO does connfd need to be closed?
   if (close(connfd) == -1) {
+//#ifdef NETISLANDS_DEBUG
     perror("connect_send_close: close connfd");
+//#endif
     //return EXIT_FAILURE;
     return EXIT_SUCCESS; // ignore error
   }
   */
   // TODO does sockfd need to be closed?...
   if (close(sockfd) == -1) {
+#ifdef NETISLANDS_DEBUG
     perror("connect_send_close: close sockfd");
+#endif
     //return EXIT_FAILURE;
     return EXIT_SUCCESS; // ignore error
   }
@@ -345,8 +379,10 @@ static void send_join_to_neighbor(void *element, void *args) {
   const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_JOIN_TAG, message, message_length);
   if (ret == EXIT_FAILURE) {
     neighbor->failure_count++;
+#ifdef NETISLANDS_DEBUG
     fprintf(stderr, "send_join_to_neighbor: Failed to send to neighbor %s:%d. (failure count = %u)\n",
             neighbor->hostname, neighbor->port, neighbor->failure_count);
+#endif
   }
 }
 
@@ -372,8 +408,10 @@ static void remove_failed_neighbors(Queue *neighbor_queue, const unsigned max_fa
     if (failed_neighbor_index != -1) { // failed neighbor found, remove from queue...
       Neighbor *failed_neighbor;
       queue_remove_index(neighbor_queue, failed_neighbor_index, (void **) &failed_neighbor); 
+#ifdef NETISLANDS_DEBUG
       fprintf(stderr, "Removed failed neighbor %s:%d. (failure count = %u)\n",
               failed_neighbor->hostname, failed_neighbor->port, failed_neighbor->failure_count);
+#endif
       free(failed_neighbor);
     } else { // no failed_neighbor found, break from loop
       break;
@@ -395,8 +433,10 @@ static void send_data_to_neighbor(void *element, void *args) {
   const int ret = connect_send_close(neighbor->hostname, neighbor->port, NETISLANDS_DATA_TAG, message, message_length);
   if (ret == EXIT_FAILURE) {
     neighbor->failure_count++;
+#ifdef NETISLANDS_DEBUG
     fprintf(stderr, "send_data_to_neighbor: Failed to send to neighbor %s:%d. (failure count = %u)\n",
             neighbor->hostname, neighbor->port, neighbor->failure_count);
+#endif
   }
 }
 
@@ -446,7 +486,9 @@ int island_init(Netislands_Island *island,
   thrd_t island_thread = malloc(sizeof(thrd_t));
   island->thread = island_thread;
   if (thrd_create(&island->thread, &island_thread_main, island) != thrd_success) {
+#ifdef NETISLANDS_DEBUG
     perror("thrd_create");
+#endif
     return EXIT_FAILURE;
   }
   // introduce this island to its neighbors...
