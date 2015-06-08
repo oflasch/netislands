@@ -483,7 +483,7 @@ int island_init(Netislands_Island *island,
   island->max_message_queue_length = max_message_queue_length;
   island->max_failures = max_failures;
   // init island thread...
-  thrd_t island_thread = malloc(sizeof(thrd_t));
+  thrd_t island_thread = (thrd_t) malloc(sizeof(thrd_t));
   island->thread = island_thread;
   if (thrd_create(&island->thread, &island_thread_main, island) != thrd_success) {
 #ifdef NETISLANDS_DEBUG
