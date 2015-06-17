@@ -159,7 +159,6 @@ static int island_thread_main(void *args) {
   int listenfd, connfd;
   fd_set fd_read_set;
   socklen_t client_address_length;
-  char message[NETISLANDS_SERVER_BUFFER_LENGTH];
 
   if ((listenfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
 #ifdef NETISLANDS_DEBUG
@@ -217,21 +216,21 @@ static int island_thread_main(void *args) {
       printf("+ Server accepted a connection.\n");
 #endif
       long message_length = 0;
-      if (receive_until_close(connfd, message, NETISLANDS_SERVER_BUFFER_LENGTH, &message_length) == EXIT_FAILURE) {
+      if (receive_until_close(connfd, island->message_buffer, NETISLANDS_SERVER_BUFFER_LENGTH, &message_length) == EXIT_FAILURE) {
 #ifdef NETISLANDS_DEBUG
         fprintf(stderr, "Network error while receiving netislands message, ignoring message. (%s line# %d)\n", __FILE__, __LINE__);
 #endif
         continue;
       }
       
-      if (check_netislands_message(message, message_length) == EXIT_FAILURE) {
+      if (check_netislands_message(island->message_buffer, message_length) == EXIT_FAILURE) {
 #ifdef NETISLANDS_DEBUG
         fprintf(stderr, "Received malformed netislands message, ignoring. (%s line# %d)\n", __FILE__, __LINE__);
 #endif
         continue;
       }
       char tag[NETISLANDS_TAG_LENGTH];
-      strncpy(tag, message + NETISLANDS_PROTOCOL_ID_LENGTH + NETISLANDS_PROTOCOL_VERSION_LENGTH, NETISLANDS_TAG_LENGTH); 
+      strncpy(tag, island->message_buffer + NETISLANDS_PROTOCOL_ID_LENGTH + NETISLANDS_PROTOCOL_VERSION_LENGTH, NETISLANDS_TAG_LENGTH); 
 
       // handle message based on message tag...
       if (strcmp(NETISLANDS_DATA_TAG, tag) == 0) { // data message
@@ -246,7 +245,7 @@ static int island_thread_main(void *args) {
           free(message_to_drop);
         }
         char *new_message = (char *) malloc(message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
-        strncpy(new_message, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
+        strncpy(new_message, island->message_buffer + NETISLANDS_PROTOCOL_HEADER_LENGTH, message_length - NETISLANDS_PROTOCOL_HEADER_LENGTH);
         queue_enqueue(island->message_queue, new_message);
         mtx_unlock(island->message_queue_mutex);
       } else if (strcmp(NETISLANDS_JOIN_TAG, tag) == 0) { // join message
@@ -254,7 +253,7 @@ static int island_thread_main(void *args) {
         Neighbor *new_neighbor = (Neighbor *) malloc(sizeof(Neighbor));
         inet_ntop(AF_INET, &(client_address.sin_addr), new_neighbor->hostname, NETISLANDS_MAX_HOSTNAME_LENGTH);
         char port_string[NETISLANDS_MAX_PORT_STRING_LENGTH];
-        strncpy(port_string, message + NETISLANDS_PROTOCOL_HEADER_LENGTH, 8);
+        strncpy(port_string, island->message_buffer + NETISLANDS_PROTOCOL_HEADER_LENGTH, 8);
         new_neighbor->port = atoi(port_string);  
         new_neighbor->failure_count = 0;
         // check if the new neighbor is already in the neighbor queue...
@@ -478,6 +477,8 @@ int island_init(Netislands_Island *island,
     queue_enqueue(island->neighbor_queue, new_neighbor);
     mtx_unlock(island->neighbor_queue_mutex);
   }
+  // init message buffer by allocating memory on heap...
+  island->message_buffer = malloc(NETISLANDS_SERVER_BUFFER_LENGTH);
   // init other members...
   island->exit_flag = 0;
   island->max_message_queue_length = max_message_queue_length;
@@ -542,6 +543,8 @@ int island_destroy(Netislands_Island *island) {
   mtx_unlock(island->neighbor_queue_mutex);
   free(island->neighbor_queue_mutex);
   free(island->neighbor_queue);
+  // cleanup message buffer...
+  free(island->message_buffer);
   // maybe deinitialize network...
   n_islands--;
   if (0 == n_islands) {

@@ -31,6 +31,7 @@ typedef struct {
   mtx_t *message_queue_mutex; 
   thrd_t thread;
   int exit_flag;
+  char *message_buffer;
 } Netislands_Island;
 
 
