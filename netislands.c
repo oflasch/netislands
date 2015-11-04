@@ -189,8 +189,8 @@ static int island_thread_main(void *args) {
     return EXIT_FAILURE;
   }
 #ifdef NETISLANDS_DEBUG
-  printf("Server socket bound to port %d. Listening for a TCP connection...\n",
-         island->port);
+  fprintf(stderr, "Server socket bound to port %d. Listening for a TCP connection...\n",
+          island->port);
 #endif
 
   while (!island->exit_flag) {
@@ -213,7 +213,7 @@ static int island_thread_main(void *args) {
         return EXIT_FAILURE;
       }
 #ifdef NETISLANDS_DEBUG
-      printf("+ Server accepted a connection.\n");
+      fprintf(stderr, "+ Server accepted a connection.\n");
 #endif
       long message_length = 0;
       if (receive_until_close(connfd, island->message_buffer, NETISLANDS_SERVER_BUFFER_LENGTH, &message_length) == EXIT_FAILURE) {
@@ -277,7 +277,7 @@ static int island_thread_main(void *args) {
     }
   }
 #ifdef NETISLANDS_DEBUG
-  printf("Island server thread clean exit.\n");
+  fprintf(stderr, "Island server thread clean exit.\n");
 #endif
   if (close(listenfd) == -1) {
 #ifdef NETISLANDS_DEBUG
@@ -551,7 +551,7 @@ int island_destroy(Netislands_Island *island) {
     netislands_shutdown();
   }
 #ifdef NETISLANDS_DEBUG
-  printf("Clean exit of island at port: %d\n", island->port);
+  fprintf(stderr, "Clean exit of island at port: %d\n", island->port);
 #endif
   return EXIT_SUCCESS;
 }
