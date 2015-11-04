@@ -316,7 +316,7 @@ static int connect_send_close(const char *hostname, const int port, const char *
   struct sockaddr_in server_address;
   memset((char *) &server_address, 0, sizeof(server_address));
   server_address.sin_family = AF_INET;
-  server_address.sin_addr.s_addr = inet_addr(hostname);
+  server_address.sin_addr.s_addr = inet_addr(hostname); // hostname has to be in x.x.x.x format
   server_address.sin_port = htons(port);
 
   int sockfd, connfd;
@@ -470,7 +470,15 @@ int island_init(Netislands_Island *island,
   // init neighbors...
   for (unsigned i = 0; i < n_neighbors; i++) {
     Neighbor *new_neighbor = (Neighbor *) malloc(sizeof(Neighbor));
-    strcpy(new_neighbor->hostname, neighbor_hostnames[i]);
+    // resolve new neighbor hostname...
+    struct hostent *hostname_entries;
+    if ((hostname_entries = gethostbyname(neighbor_hostnames[i])) == NULL) {
+      fprintf(stderr, "island_init: error resolving neighbor hostname '%s'.\n",
+              neighbor_hostnames[i]);
+      return EXIT_FAILURE;
+    }
+    // init neighbor fields...
+    inet_ntop(AF_INET, hostname_entries->h_addr_list[0], new_neighbor->hostname, NETISLANDS_MAX_HOSTNAME_LENGTH);
     new_neighbor->port = neighbor_ports[i];
     new_neighbor->failure_count = 0;
     mtx_lock(island->neighbor_queue_mutex);
